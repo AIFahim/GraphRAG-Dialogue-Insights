@@ -1,0 +1,46 @@
+# Generated outputs
+data/seoss_extracted/results/
+poc-subgraph-imaging/results/
+results/
+
+# Conversation exports
+*.txt
+claude*.txt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Data files (large)
+*.sqlite3
+*.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Reference materials and datasets
+*.pdf
+*.zip
+*.jpg
+*.png
+*.csv
+data/coest_datasets/
+data/dataverse_files.zip

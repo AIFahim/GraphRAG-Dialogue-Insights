@@ -1,0 +1,26 @@
+# Generated images and outputs
+results/
+
+# Conversation exports
+*.txt
+claude*.txt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
