@@ -16,11 +16,18 @@ from huggingface_hub import InferenceClient
 import networkx as nx
 import matplotlib.pyplot as plt
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("Note: python-dotenv not installed. Using environment variables only.")
+
 # Config
-NEO4J_URI = "bolt://127.0.0.1:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "password"
-HF_TOKEN = os.environ.get("HF_TOKEN")  # Set HF_TOKEN environment variable
+NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://127.0.0.1:7687")
+NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "password")
+HF_TOKEN = os.environ.get("HF_TOKEN")  # Required: Set in .env or environment
 MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct"
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "seoss_extracted", "results")
 
