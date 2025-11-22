@@ -35,9 +35,12 @@ Thumbs.db
 # Logs
 *.log
 
-# Data files (large)
+# Database files (general)
 *.sqlite3
 *.db
+
+# But allow SEOSS dataset
+!data/seoss_extracted/archiva.sqlite3
 
 # Jupyter
 .ipynb_checkpoints/
