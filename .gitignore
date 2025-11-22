@@ -3,6 +3,9 @@ data/seoss_extracted/results/
 poc-subgraph-imaging/results/
 results/
 
+# Environment variables
+.env
+
 # Conversation exports
 *.txt
 claude*.txt
