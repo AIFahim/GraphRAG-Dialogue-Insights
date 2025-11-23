@@ -1,0 +1,35 @@
+{
+  "0696b2372b4afc1c": {
+    "query": "What issues are related to MRM-488?",
+    "central_nodes": [],
+    "topology_type": "chain",
+    "image_path": "/home/aifahim/PycharmProjects/GraphRAG-Dialogue-Insights/data/reasoning_templates/images/0696b2372b4afc1c_network.png",
+    "timestamp": "2025-11-24T00:58:57.971391",
+    "validated": true,
+    "score": 0.6
+  },
+  "064ccabc86a8dbdc": {
+    "query": "Show me all relationships AND duplicates for MRM-615",
+    "central_nodes": [
+      "MRM-952"
+    ],
+    "topology_type": "star",
+    "image_path": "/home/aifahim/PycharmProjects/GraphRAG-Dialogue-Insights/data/reasoning_templates/images/064ccabc86a8dbdc_network.png",
+    "timestamp": "2025-11-24T01:20:05.399151",
+    "validated": true,
+    "score": 1.0
+  },
+  "e543aaee8f4be5f8": {
+    "query": "Show me MRM-615 with all relationship types including RELATES_TO, DUPLICATES, AFFECTS, and assignments",
+    "central_nodes": [
+      "MRM-615",
+      "MRM-952",
+      "MRM-844"
+    ],
+    "topology_type": "multi-hub",
+    "image_path": "/home/aifahim/PycharmProjects/GraphRAG-Dialogue-Insights/data/reasoning_templates/images/e543aaee8f4be5f8_network.png",
+    "timestamp": "2025-11-24T02:09:17.882288",
+    "validated": true,
+    "score": 1.0
+  }
+}

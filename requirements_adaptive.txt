@@ -1,0 +1,17 @@
+# Adaptive Multimodal GraphRAG System Requirements
+
+# HuggingFace API (NO model download needed!)
+# huggingface_hub>=0.20.0  (already installed)
+
+# Embedding & Similarity
+sentence-transformers>=2.5.0
+scikit-learn>=1.3.0
+
+# Image handling
+pillow>=9.0.0
+
+# Already installed from your system:
+# neo4j>=5.27.0
+# networkx>=3.0
+# matplotlib>=3.7.0
+# streamlit>=1.28.0

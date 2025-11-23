@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from prompts.cypher_prompt import create_prompt
 from prompts.stakeholder_prompt import create_qa_prompt
 from langchain_community.llms import Ollama
+from hf_llm import HuggingFaceInferenceLLM
 import openai
 import json
 from datetime import datetime
@@ -15,7 +16,7 @@ st.set_page_config(page_title="GraphRAG Dialogue Insights", layout="wide")
 st.title("GraphRAG Dialogue Insights")
 stakeholder_name = st.sidebar.selectbox("Stakeholder Prompt",
                                         ["software_engineer", "service_coordinator", "product_owner"])
-select_model = st.sidebar.selectbox("Choose Model", ["Llama3.1", "GPT-4.0"])
+select_model = st.sidebar.selectbox("Choose Model", ["Qwen-Coder-3-7B", "Llama3.1", "GPT-4.0"])
 
 with st.expander("📌 Cheat Sheet", expanded=True):
     st.markdown("""
@@ -145,7 +146,29 @@ def chat_bot_invoke(chain):
         st.success(f"Chat History Saved: {file_path}")
 
 
-if select_model == "GPT-4.0":
+if select_model == "Qwen-Coder-3-7B":
+    hf_token = st.sidebar.text_input("Enter HuggingFace Token", "", type="password")
+
+    if hf_token:
+        st.warning("HuggingFace Token present")
+
+        qwen_chain = GraphCypherQAChain.from_llm(
+            graph=enhanced_graph,
+            llm=HuggingFaceInferenceLLM(
+                token=hf_token,
+                model="Qwen/Qwen2.5-Coder-7B-Instruct"
+            ),
+            cypher_prompt=cypher_prompt_,
+            qa_prompt=qa_prompt_,
+            validate_cypher=True,
+            return_intermediate_steps=True,
+            allow_dangerous_requests=True
+        )
+        chat_bot_invoke(chain=qwen_chain)
+    else:
+        st.warning("Please enter HuggingFace Token to continue")
+
+elif select_model == "GPT-4.0":
     user_openai_api_key = st.sidebar.text_input("Enter Open AI key", "", type="password")
 
     if user_openai_api_key:
