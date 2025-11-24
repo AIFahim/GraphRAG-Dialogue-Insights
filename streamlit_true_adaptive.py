@@ -60,7 +60,7 @@ with st.sidebar:
     all_templates = st.session_state.template_db.get_all_templates()
 
     if all_templates:
-        positive = [t for t in all_templates if t['helpfulness_score'] >= 0.8 and t['user_feedback']]
+        positive = [t for t in all_templates if t['helpfulness_score'] >= 0.7 and t['user_feedback']]
         if positive:
             st.subheader("✅ User Loved:")
             for t in positive[:3]:
@@ -112,42 +112,51 @@ if run_btn and query:
             if result.get('response'):
                 st.info(f"💬 {result['response']}")
 
-            # Show visualization
+            # Show visualizations (Network + PlantUML)
             if result.get('image') and os.path.exists(result['image']):
-                st.image(result['image'], use_container_width=True)
+                viz_tab1, viz_tab2 = st.tabs(["🔷 Network Graph", "📐 PlantUML Diagram"])
 
-            # Extract and store
-            graph_structure = st.session_state.vision_extractor.extract_complete_structure(
-                result['image']
-            )
+                with viz_tab1:
+                    st.image(result['image'], caption="Network Graph (matplotlib)", use_container_width=True)
 
-            reasoning_path = ReasoningPathBuilder.build_reasoning_path(
-                graph_structure=graph_structure,
-                query=query,
-                cypher=result['cypher'],
-                response=result.get('response', '')
-            )
+                with viz_tab2:
+                    # Try PNG first
+                    plantuml_png = result.get('plantuml_image')
+                    plantuml_file = result.get('plantuml_file')
+                    plantuml_code = result.get('plantuml_code')
 
-            # Store for validation
+                    if plantuml_png and os.path.exists(plantuml_png):
+                        # PNG available
+                        st.image(plantuml_png, caption="PlantUML Diagram", use_container_width=True)
+                    elif plantuml_code:
+                        # PNG failed, show code instead
+                        st.warning("⚠️ PlantUML PNG render failed (server error), showing code instead")
+                        st.code(plantuml_code, language='plantuml')
+                        if plantuml_file and os.path.exists(plantuml_file):
+                            st.caption(f"PlantUML file saved: {os.path.basename(plantuml_file)}")
+                    else:
+                        st.info("PlantUML not generated")
+
+            # Store query info for validation (NO extraction yet!)
+            # Extraction will happen AFTER user validates as helpful
             st.session_state.last_result = {
-                'reasoning_path': reasoning_path,
+                'query': query,
                 'image_path': result['image'],
                 'plantuml_path': result.get('plantuml_image'),
-                'query': query
+                'cypher': result['cypher'],
+                'response': result.get('response', ''),
+                'nodes': result.get('nodes', []),
+                'edges': result.get('edges', []),
+                'results': result.get('results', [])
             }
 
-            with st.expander("🔍 Details"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("**Generated Cypher:**")
-                    st.code(result['cypher'], language='cypher')
-                with col2:
-                    st.write("**Extracted Structure:**")
-                    st.json({
-                        'entities': graph_structure['entities'][:5],
-                        'relationships': len(graph_structure['relationships']),
-                        'topology': graph_structure['topology']
-                    })
+            with st.expander("🔍 Query Details"):
+                st.write("**Generated Cypher:**")
+                st.code(result['cypher'], language='cypher')
+                st.write(f"**Results:** {len(result.get('results', []))} records from Neo4j")
+                st.write(f"**Nodes in visualization:** {len(result.get('nodes', []))}")
+                st.write(f"**Edges in visualization:** {len(result.get('edges', []))}")
+                st.info("💡 Vision extraction will occur ONLY if you mark this as helpful (saves API quota!)")
         else:
             st.warning("No results found")
 
@@ -172,17 +181,60 @@ if st.session_state.get('last_result'):
         submit = st.form_submit_button("💾 Submit & Teach System")
 
         if submit:
+            # ONLY extract if helpful (saves API quota!)
+            if helpful == "Yes" and score >= 0.5:
+                # User found it helpful - extract structure from image
+                with st.spinner("🔍 Extracting structure from visualization (only for helpful queries)..."):
+                    graph_structure = st.session_state.vision_extractor.extract_complete_structure(
+                        st.session_state.last_result['image_path']
+                    )
+
+                    reasoning_path = ReasoningPathBuilder.build_reasoning_path(
+                        graph_structure=graph_structure,
+                        query=st.session_state.last_result['query'],
+                        cypher=st.session_state.last_result['cypher'],
+                        response=st.session_state.last_result['response']
+                    )
+
+                    st.info(f"✅ Extracted: {len(graph_structure['entities'])} entities, "
+                           f"{len(graph_structure['relationships'])} relationships, "
+                           f"topology: {graph_structure['topology'].get('topology_type')}")
+
+            else:
+                # Not helpful - create minimal reasoning path (no extraction needed)
+                reasoning_path = {
+                    'query': st.session_state.last_result['query'],
+                    'query_type': 'unknown',
+                    'cypher_query': st.session_state.last_result['cypher'],
+                    'response': st.session_state.last_result['response'],
+                    'central_nodes': [],
+                    'entities': st.session_state.last_result.get('nodes', []),  # Use pipeline data
+                    'relationships': [],
+                    'topology': {'type': 'unknown', 'has_multiple_hubs': False, 'has_clusters': False, 'clusters': {}},
+                    'pattern': {
+                        'node_count': len(st.session_state.last_result.get('nodes', [])),
+                        'edge_count': len(st.session_state.last_result.get('edges', [])),
+                        'depth': 0,
+                        'density': 0
+                    },
+                    'image_path': st.session_state.last_result['image_path']
+                }
+
+                st.warning("⚠️ Skipped vision extraction (not helpful - saves API quota)")
+
+            # Store template
             template_id = st.session_state.template_db.store_template(
-                reasoning_path=st.session_state.last_result['reasoning_path'],
+                reasoning_path=reasoning_path,
                 image_path=st.session_state.last_result['image_path'],
                 plantuml_path=st.session_state.last_result.get('plantuml_path'),
                 user_helpful=(helpful == "Yes"),
-                helpfulness_score=score if helpful == "Yes" else 0.3,
+                helpfulness_score=score if helpful == "Yes" else score,
                 user_feedback=feedback if feedback else None
             )
 
             st.success(f"✅ Stored! LLM will see this feedback on future similar queries")
-            st.balloons()
+            if helpful == "Yes":
+                st.balloons()
 
             st.session_state.last_result = None
             st.rerun()
