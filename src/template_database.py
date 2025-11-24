@@ -302,6 +302,51 @@ class TemplateDatabase:
 
         print(f"✅ Updated template {template_id} reuse metrics (helpful: {was_helpful})")
 
+    def get_all_templates(self) -> List[Dict]:
+        """
+        Get ALL templates (for learning from all feedbacks)
+
+        Returns:
+            List of all templates with their data
+        """
+
+        with self.driver.session() as session:
+            result = session.run("""
+                MATCH (rt:ReasoningTemplate)
+                RETURN rt.template_id as template_id,
+                       rt.query as query,
+                       rt.cypher_query as cypher,
+                       rt.entities as entities,
+                       rt.relationships as relationships,
+                       rt.central_nodes as central_nodes,
+                       rt.topology_type as topology,
+                       rt.helpfulness_score as score,
+                       rt.user_feedback as feedback,
+                       rt.reuse_count as reuse_count,
+                       rt.node_count as node_count,
+                       rt.depth as depth
+                ORDER BY rt.helpfulness_score DESC
+            """)
+
+            templates = []
+            for record in result:
+                templates.append({
+                    'template_id': record['template_id'],
+                    'query': record['query'],
+                    'cypher': record['cypher'],
+                    'entities': json.loads(record['entities']) if record['entities'] else [],
+                    'relationships': json.loads(record['relationships']) if record['relationships'] else [],
+                    'central_nodes': json.loads(record['central_nodes']) if record['central_nodes'] else [],
+                    'topology': record['topology'],
+                    'helpfulness_score': record['score'],
+                    'user_feedback': record['feedback'],
+                    'reuse_count': record['reuse_count'],
+                    'node_count': record['node_count'],
+                    'depth': record['depth']
+                })
+
+            return templates
+
     def get_template_stats(self) -> Dict:
         """Get statistics about stored templates"""
         with self.driver.session() as session:
