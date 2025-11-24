@@ -21,7 +21,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 TEMPLATE_STORAGE_DIR = "/home/aifahim/PycharmProjects/GraphRAG-Dialogue-Insights/data/reasoning_templates"
 IMAGE_STORAGE = os.path.join(TEMPLATE_STORAGE_DIR, "images")
 METADATA_STORAGE = os.path.join(TEMPLATE_STORAGE_DIR, "metadata")
-KV_STORE_FILE = os.path.join(METADATA_STORAGE, "kv_store_templates.json")
 
 # Create directories
 os.makedirs(IMAGE_STORAGE, exist_ok=True)
@@ -51,9 +50,6 @@ class TemplateDatabase:
         print("Loading embedding model...")
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         print("Embedding model loaded")
-
-        # Load key-value store
-        self.kv_store = self._load_kv_store()
 
         # Initialize schema
         self._initialize_schema()
@@ -162,17 +158,6 @@ class TemplateDatabase:
                 'score': helpfulness_score,
                 'feedback': user_feedback
             })
-
-        # Update KV store
-        self._update_kv_store(template_id, {
-            'query': reasoning_path['query'],
-            'central_nodes': reasoning_path['central_nodes'],
-            'topology_type': reasoning_path['topology']['type'],
-            'image_path': stored_image,
-            'timestamp': datetime.now().isoformat(),
-            'validated': user_helpful,
-            'score': helpfulness_score
-        })
 
         print(f"\n✅ Stored reasoning template: {template_id}")
         print(f"   Query: {reasoning_path['query'][:60]}...")
@@ -416,19 +401,6 @@ class TemplateDatabase:
         elif 'assign' in q or 'who' in q:
             return 'assignment'
         return 'general'
-
-    def _load_kv_store(self) -> Dict:
-        """Load key-value store"""
-        if os.path.exists(KV_STORE_FILE):
-            with open(KV_STORE_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-
-    def _update_kv_store(self, template_id: str, data: Dict):
-        """Update key-value store"""
-        self.kv_store[template_id] = data
-        with open(KV_STORE_FILE, 'w') as f:
-            json.dump(self.kv_store, f, indent=2)
 
     def _initialize_schema(self):
         """Initialize database schema"""

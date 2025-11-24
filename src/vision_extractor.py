@@ -46,14 +46,47 @@ class VisionGraphExtractor:
         self.model = model_name
         print("✅ API client ready (no download needed!)")
 
-    def extract_entities(self, image_path: str) -> List[str]:
+    def _call_vision_api(self, image_path: str, prompt: str, max_tokens: int = 512) -> str:
         """
-        Step 1: Extract all entity names from visualization
+        Common method for all vision API calls
+
+        Args:
+            image_path: Path to graph visualization image
+            prompt: Text prompt for the vision model
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            Raw response text from vision model
+
+        Raises:
+            Exception: If API call fails (no silent fallbacks)
         """
         # Load image and convert to base64
         with open(image_path, "rb") as f:
             image_data = base64.b64encode(f.read()).decode()
 
+        # Call HF Inference API with image
+        response = self.client.chat_completion(
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_data}"}
+                    }
+                ]
+            }],
+            model=self.model,
+            max_tokens=max_tokens
+        )
+
+        return response.choices[0].message.content.strip()
+
+    def extract_entities(self, image_path: str) -> List[str]:
+        """
+        Step 1: Extract all entity names from visualization
+        """
         prompt = """Look at this graph visualization.
 Extract ALL node labels/names you can see.
 
@@ -62,49 +95,28 @@ Example: ["MRM-488", "MRM-615", "WebUI", "Martin"]
 
 JSON list:"""
 
+        # Call vision API (raises exception on error - no fallback)
+        result = self._call_vision_api(image_path, prompt, max_tokens=512)
+
+        # Parse JSON response
         try:
-            # Call HF Inference API with image
-            response = self.client.chat_completion(
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_data}"}
-                        }
-                    ]
-                }],
-                model=self.model,
-                max_tokens=512
-            )
+            entities = json.loads(result)
+            if isinstance(entities, list):
+                return entities
+        except json.JSONDecodeError:
+            # Try to extract from malformed JSON
+            import re
+            entities = re.findall(r'"([^"]+)"', result)
+            if entities:
+                return entities
 
-            result = response.choices[0].message.content.strip()
-
-            # Parse JSON
-            try:
-                entities = json.loads(result)
-                if isinstance(entities, list):
-                    return entities
-            except json.JSONDecodeError:
-                # Fallback: extract from text
-                import re
-                entities = re.findall(r'"([^"]+)"', result)
-
-            return entities
-
-        except Exception as e:
-            print(f"  API error: {e}")
-            print(f"  Falling back to algorithmic extraction...")
-            return self._extract_entities_fallback(image_path)
+        # If all parsing fails, raise error (no silent fallback!)
+        raise ValueError(f"Failed to parse entities from response: {result[:100]}...")
 
     def extract_relationships(self, image_path: str, entities: List[str]) -> List[Dict]:
         """
         Step 2: Extract relationships between entities
         """
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode()
-
         prompt = f"""Graph nodes: {entities}
 
 Look at the arrows/edges in this graph.
@@ -121,45 +133,24 @@ Return as JSON array:
 
 JSON array:"""
 
+        # Call vision API (raises exception on error)
+        result = self._call_vision_api(image_path, prompt, max_tokens=1024)
+
+        # Parse JSON response
         try:
-            response = self.client.chat_completion(
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_data}"}
-                        }
-                    ]
-                }],
-                model=self.model,
-                max_tokens=1024
-            )
+            relationships = json.loads(result)
+            if isinstance(relationships, list):
+                return relationships
+        except json.JSONDecodeError:
+            pass
 
-            result = response.choices[0].message.content.strip()
-
-            # Parse JSON
-            try:
-                relationships = json.loads(result)
-                if isinstance(relationships, list):
-                    return relationships
-            except json.JSONDecodeError:
-                pass
-
-            return []
-
-        except Exception as e:
-            print(f"  API error: {e}")
-            return []
+        # If parsing fails, raise error (no silent fallback!)
+        raise ValueError(f"Failed to parse relationships from response: {result[:100]}...")
 
     def analyze_topology(self, image_path: str, entities: List[str], relationships: List[Dict]) -> Dict:
         """
         Step 3: Analyze graph topology and structure
         """
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode()
-
         prompt = f"""Analyze this graph structure.
 
 Nodes: {entities}
@@ -179,36 +170,18 @@ Return as JSON:
 
 JSON:"""
 
+        # Call vision API (raises exception on error)
+        result = self._call_vision_api(image_path, prompt, max_tokens=512)
+
+        # Parse JSON response
         try:
-            response = self.client.chat_completion(
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{image_data}"}
-                        }
-                    ]
-                }],
-                model=self.model,
-                max_tokens=512
-            )
+            topology = json.loads(result)
+            return topology
+        except json.JSONDecodeError:
+            pass
 
-            result = response.choices[0].message.content.strip()
-
-            # Parse JSON
-            try:
-                topology = json.loads(result)
-                return topology
-            except json.JSONDecodeError:
-                pass
-
-        except Exception as e:
-            print(f"  API error: {e}")
-
-        # Fallback to algorithmic detection
-        return self._detect_topology_algorithmic(entities, relationships)
+        # If parsing fails, raise error (no silent fallback!)
+        raise ValueError(f"Failed to parse topology from response: {result[:100]}...")
 
     def extract_complete_structure(self, image_path: str) -> Dict:
         """
@@ -240,43 +213,6 @@ JSON:"""
             'topology': topology,
             'image_path': image_path
         }
-
-    def _extract_entities_fallback(self, image_path: str) -> List[str]:
-        """Fallback: Try OCR or pattern matching"""
-        # Simple fallback - look for MRM- patterns in filename
-        import re
-        filename = os.path.basename(image_path)
-        entities = re.findall(r'MRM-\d+', filename)
-        return entities if entities else []
-
-    def _detect_topology_algorithmic(self, entities: List[str], relationships: List[Dict]) -> Dict:
-        """Fallback: algorithmic topology detection"""
-        # Count connections
-        connections = Counter()
-        for rel in relationships:
-            connections[rel.get('source', '')] += 1
-            connections[rel.get('target', '')] += 1
-
-        # Find central nodes (threshold: >= 2 connections)
-        central_nodes = [node for node, count in connections.items() if count >= 2]
-
-        # Determine topology
-        if len(central_nodes) == 0:
-            topology_type = "chain"
-        elif len(central_nodes) == 1:
-            topology_type = "star"
-        elif len(central_nodes) >= 3:
-            topology_type = "multi-hub"
-        else:
-            topology_type = "bipartite"
-
-        return {
-            'central_nodes': central_nodes if central_nodes else [connections.most_common(1)[0][0]] if connections else [],
-            'topology_type': topology_type,
-            'has_clusters': len(central_nodes) > 2,
-            'visual_features': {}
-        }
-
 
 class ReasoningPathBuilder:
     """Build reasoning paths from extracted graph structure"""

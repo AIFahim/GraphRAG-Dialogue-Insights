@@ -114,28 +114,36 @@ if run_btn and query:
 
             # Show visualizations (Network + PlantUML)
             if result.get('image') and os.path.exists(result['image']):
-                viz_tab1, viz_tab2 = st.tabs(["🔷 Network Graph", "📐 PlantUML Diagram"])
+                # Verify image is valid before displaying
+                try:
+                    from PIL import Image
+                    Image.open(result['image']).verify()  # Check if valid
+                except Exception as img_error:
+                    st.error(f"Image file corrupted: {img_error}")
+                    st.caption(f"Path: {result['image']}")
+                else:
+                    viz_tab1, viz_tab2 = st.tabs(["🔷 Network Graph", "📐 PlantUML Diagram"])
 
-                with viz_tab1:
-                    st.image(result['image'], caption="Network Graph (matplotlib)", use_container_width=True)
+                    with viz_tab1:
+                        st.image(result['image'], caption="Network Graph (matplotlib)", use_container_width=True)
 
-                with viz_tab2:
-                    # Try PNG first
-                    plantuml_png = result.get('plantuml_image')
-                    plantuml_file = result.get('plantuml_file')
-                    plantuml_code = result.get('plantuml_code')
+                    with viz_tab2:
+                        # Try PNG first
+                        plantuml_png = result.get('plantuml_image')
+                        plantuml_file = result.get('plantuml_file')
+                        plantuml_code = result.get('plantuml_code')
 
-                    if plantuml_png and os.path.exists(plantuml_png):
-                        # PNG available
-                        st.image(plantuml_png, caption="PlantUML Diagram", use_container_width=True)
-                    elif plantuml_code:
-                        # PNG failed, show code instead
-                        st.warning("⚠️ PlantUML PNG render failed (server error), showing code instead")
-                        st.code(plantuml_code, language='plantuml')
-                        if plantuml_file and os.path.exists(plantuml_file):
-                            st.caption(f"PlantUML file saved: {os.path.basename(plantuml_file)}")
-                    else:
-                        st.info("PlantUML not generated")
+                        if plantuml_png and os.path.exists(plantuml_png):
+                            # PNG available
+                            st.image(plantuml_png, caption="PlantUML Diagram", use_container_width=True)
+                        elif plantuml_code:
+                            # PNG failed, show code instead
+                            st.warning("⚠️ PlantUML PNG render failed (server error), showing code instead")
+                            st.code(plantuml_code, language='plantuml')
+                            if plantuml_file and os.path.exists(plantuml_file):
+                                st.caption(f"PlantUML file saved: {os.path.basename(plantuml_file)}")
+                        else:
+                            st.info("PlantUML not generated")
 
             # Store query info for validation (NO extraction yet!)
             # Extraction will happen AFTER user validates as helpful
