@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 """
-TRUE Adaptive GraphRAG Streamlit UI
+Adaptive GraphRAG Streamlit UI
 Uses AdaptiveITSPipeline that ACTUALLY passes templates to LLM
-
-KEY DIFFERENCE from streamlit_adaptive.py:
-- Uses AdaptiveITSPipeline instead of SimpleLLMPipeline
-- Templates and feedbacks are INJECTED into LLM prompts
-- LLM generates Cypher using learned patterns
-- TRUE feedback-driven learning!
 """
 import streamlit as st
 import os
@@ -17,27 +11,30 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'poc-subgraph-imaging'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from adaptive_its_pipeline import AdaptiveITSPipeline
+from adaptive_its_pipeline_w_o_vision import AdaptiveITSPipeline
 from vision_extractor import VisionGraphExtractor, ReasoningPathBuilder
 from template_database import TemplateDatabase
 
 # Page config
 st.set_page_config(
-    page_title="Adaptive GraphRAG",
-    page_icon="🧠",
+    page_title="Adaptive GraphRAG (w/o Image Data)",
+    page_icon="📊",
     layout="wide"
 )
 
 # Initialize session state
 if 'adaptive_pipeline' not in st.session_state:
-    st.session_state.adaptive_pipeline = AdaptiveITSPipeline()
+    # Initialize with NoVision node label to separate databases
+    st.session_state.adaptive_pipeline = AdaptiveITSPipeline(node_label="ReasoningTemplateNoVision")
 if 'vision_extractor' not in st.session_state:
     st.session_state.vision_extractor = VisionGraphExtractor()
 if 'template_db' not in st.session_state:
-    st.session_state.template_db = TemplateDatabase()
+    # Use different node label to keep databases separate from WITH Vision system
+    st.session_state.template_db = TemplateDatabase(node_label="ReasoningTemplateNoVision")
 
 # Header
-st.title("Adaptive GraphRAG")
+st.title("📊 Adaptive GraphRAG (without Image Data)")
+st.markdown("**Control Group: No vision-extracted structure in LLM prompts**")
 st.markdown("---")
 
 # Sidebar
@@ -171,7 +168,7 @@ if run_btn and query:
 if st.session_state.get('last_result'):
     st.markdown("---")
     with st.form("validation"):
-        st.subheader("⭐ Validate & Teach the System")
+        st.subheader("Validate & Teach the System")
         st.write(f"Query: *{st.session_state.last_result.get('query')}*")
 
         helpful = st.radio("Helpful?", ["Yes", "No"])
@@ -191,7 +188,7 @@ if st.session_state.get('last_result'):
             # ONLY extract if helpful (saves API quota!)
             if helpful == "Yes" and score >= 0.5:
                 # User found it helpful - extract structure from image
-                with st.spinner("🔍 Extracting structure from visualization (only for helpful queries)..."):
+                with st.spinner("🔍 Extracting structure (only for helpful queries)..."):
                     graph_structure = st.session_state.vision_extractor.extract_complete_structure(
                         st.session_state.last_result['image_path']
                     )

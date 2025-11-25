@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Adaptive GraphRAG Streamlit UI
-Side-by-side comparison: With vs Without Adaptive Learning
+Uses AdaptiveITSPipeline that ACTUALLY passes templates to LLM
+
 """
 import streamlit as st
 import os
@@ -11,377 +12,235 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'poc-subgraph-imaging'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from its_llm_pipeline import SimpleLLMPipeline
-from src.vision_extractor import VisionGraphExtractor, ReasoningPathBuilder
-from src.template_database import TemplateDatabase
+from adaptive_its_pipeline import AdaptiveITSPipeline
+from vision_extractor import VisionGraphExtractor, ReasoningPathBuilder
+from template_database import TemplateDatabase
 
 # Page config
 st.set_page_config(
-    page_title="Adaptive GraphRAG Demo",
+    page_title="Adaptive GraphRAG",
     page_icon="🧠",
     layout="wide"
 )
 
 # Initialize session state
-if 'base_pipeline' not in st.session_state:
-    st.session_state.base_pipeline = SimpleLLMPipeline()
+if 'adaptive_pipeline' not in st.session_state:
+    st.session_state.adaptive_pipeline = AdaptiveITSPipeline()
 if 'vision_extractor' not in st.session_state:
     st.session_state.vision_extractor = VisionGraphExtractor()
 if 'template_db' not in st.session_state:
     st.session_state.template_db = TemplateDatabase()
-if 'history' not in st.session_state:
-    st.session_state.history = []
-if 'comparison_mode' not in st.session_state:
-    st.session_state.comparison_mode = True
 
 # Header
-st.title("🧠 Adaptive GraphRAG Issue Tracking System")
-st.markdown("**Compare: Standard vs Adaptive Learning**")
+st.title("Adaptive GraphRAG")
 st.markdown("---")
 
-# Sidebar - Stats & Controls
+# Sidebar
 with st.sidebar:
-    st.header("📊 Adaptive Learning Stats")
+    st.header("📊 Learning Stats")
 
     stats = st.session_state.template_db.get_template_stats()
 
-    st.metric("Total Templates", stats['total_templates'] or 0)
-    st.metric("Validated Templates", stats['validated_templates'] or 0)
-    st.metric("Avg Helpfulness", f"{stats['average_helpfulness'] or 0:.2f}/1.0")
-    st.metric("Total Reuses", stats['total_reuses'] or 0)
-    st.metric("Success Rate", f"{stats['average_success_rate'] or 0:.1%}")
+    st.metric("Templates", stats['total_templates'] or 0)
+    st.metric("Avg Score", f"{stats['average_helpfulness'] or 0:.2f}/1.0")
+    st.metric("Reuses", stats['total_reuses'] or 0)
+    st.metric("Success", f"{stats['average_success_rate'] or 0:.1%}")
 
     st.markdown("---")
 
-    st.header("⚙️ Settings")
-    st.session_state.comparison_mode = st.checkbox(
-        "Show Comparison",
-        value=True,
-        help="Compare standard vs adaptive side-by-side"
-    )
+    # Show what system learned
+    st.header("System Has Learned")
 
-    min_similarity = st.slider(
-        "Min Similarity Threshold",
-        0.0, 1.0, 0.5,
-        help="Minimum similarity to suggest templates"
-    )
+    all_templates = st.session_state.template_db.get_all_templates()
 
-    st.markdown("---")
-    st.header("💡 Example Questions")
-    examples = [
-        "What issues does MRM-488 relate to?",
-        "Show bugs that relate to other bugs",
-        "Which developer has the most bugs?",
-        "What components does MRM-615 affect?",
-    ]
+    if all_templates:
+        positive = [t for t in all_templates if t['helpfulness_score'] >= 0.7 and t['user_feedback']]
+        if positive:
+            st.subheader("User Approved:")
+            for t in positive[:3]:
+                st.success(f'"{t["user_feedback"][:80]}..."')
 
-    for idx, example in enumerate(examples):
-        if st.button(example, key=f"ex_{idx}", use_container_width=True):
-            st.session_state.current_query = example
-            st.rerun()
+        negative = [t for t in all_templates if t['helpfulness_score'] < 0.5 and t['user_feedback']]
+        if negative:
+            st.subheader("User Disapproved:")
+            for t in negative[:3]:
+                st.error(f'"{t["user_feedback"][:80]}..."')
+    else:
+        st.info("No feedback yet - system will learn as you use it!")
 
-# Main area
-if st.session_state.comparison_mode:
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.subheader("🤖 Standard Pipeline")
-        st.caption("Fresh generation every time")
-
-    with col_right:
-        st.subheader("🧠 Adaptive Pipeline")
-        st.caption("Learns from past queries")
-else:
-    st.subheader("🧠 Adaptive GraphRAG")
-
-# Query input
+# Main content
 query = st.text_input(
-    "🔎 Ask a question about the issue tracking system:",
-    placeholder="e.g., What issues does MRM-488 relate to?",
-    value=st.session_state.get('current_query', '')
+    "Ask a question:",
+    placeholder="e.g., Show me all relationships for MRM-681"
 )
 
-run_query = st.button("🚀 Run Query", type="primary", use_container_width=True)
+run_btn = st.button("Run", type="primary", use_container_width=True)
 
-# Process query
-if run_query and query:
-    st.session_state.current_query = query
+if run_btn and query:
+    # Search for similar (show user what LLM will see)
+    with st.expander("LLM Context", expanded=True):
+        similar = st.session_state.template_db.find_similar_templates(query, top_k=2, min_score=0.5)
 
-    if st.session_state.comparison_mode:
-        # COMPARISON MODE: Show both side-by-side
-        col_standard, col_adaptive = st.columns(2)
+        if similar:
+            st.write("**Similar Successful Patterns:**")
+            for t in similar:
+                st.write(f"- \"{t['query'][:60]}...\" (score: {t['helpfulness_score']:.2f}, similarity: {t['combined_score']:.3f})")
+                if t.get('user_feedback'):
+                    st.info(f"Feedback: \"{t['user_feedback']}\"")
 
-        # Standard pipeline (left)
-        with col_standard:
-            with st.spinner("Running standard pipeline..."):
-                standard_result = st.session_state.base_pipeline.run(query)
+        all_fb = st.session_state.template_db.get_all_templates()
+        if all_fb:
+            st.write(f"\n**All User Feedbacks ({len(all_fb)} total):**")
+            for t in all_fb[:5]:
+                if t.get('user_feedback'):
+                    emoji = "✅" if t['helpfulness_score'] >= 0.8 else ("❌" if t['helpfulness_score'] < 0.5 else "⚠️")
+                    st.write(f"{emoji} \"{t['user_feedback'][:60]}...\" (score: {t['helpfulness_score']:.2f})")
 
-                st.success("✅ Standard completed")
+    # Run with adaptive learning
+    with st.spinner("Running..."):
+        result = st.session_state.adaptive_pipeline.run(query)
 
-                if standard_result.get('response'):
-                    st.info(f"💬 {standard_result['response']}")
+        if result.get('nodes'):
+            st.success("Query completed with learning applied!")
 
-                # Show visualization
-                if standard_result.get('image') and os.path.exists(standard_result['image']):
-                    st.image(standard_result['image'], caption="Network Graph", use_container_width=True)
+            if result.get('response'):
+                st.info(f"💬 {result['response']}")
 
-                # Metrics
-                st.metric("Nodes", len(standard_result.get('nodes', [])))
-                st.metric("Edges", len(standard_result.get('edges', [])))
+            # Show visualizations (Network + PlantUML)
+            if result.get('image') and os.path.exists(result['image']):
+                # Verify image is valid before displaying
+                try:
+                    from PIL import Image
+                    Image.open(result['image']).verify()  # Check if valid
+                except Exception as img_error:
+                    st.error(f"Image file corrupted: {img_error}")
+                    st.caption(f"Path: {result['image']}")
+                else:
+                    viz_tab1, viz_tab2 = st.tabs(["🔷 Network Graph", "📐 PlantUML Diagram"])
 
-                with st.expander("🔍 Details"):
-                    st.code(standard_result['cypher'], language='cypher')
-                    st.json(standard_result['results'][:3])
+                    with viz_tab1:
+                        st.image(result['image'], caption="Network Graph (matplotlib)", use_container_width=True)
 
-        # Adaptive pipeline (right)
-        with col_adaptive:
-            # Search for similar templates
-            similar_templates = st.session_state.template_db.find_similar_templates(
-                query=query,
-                top_k=3,
-                min_score=min_similarity,
-                require_validated=True
-            )
+                    with viz_tab2:
+                        # Try PNG first
+                        plantuml_png = result.get('plantuml_image')
+                        plantuml_file = result.get('plantuml_file')
+                        plantuml_code = result.get('plantuml_code')
 
-            if similar_templates:
-                st.success(f"🔍 Found {len(similar_templates)} similar patterns!")
+                        if plantuml_png and os.path.exists(plantuml_png):
+                            # PNG available
+                            st.image(plantuml_png, caption="PlantUML Diagram", use_container_width=True)
+                        elif plantuml_code:
+                            # PNG failed, show code instead
+                            st.warning("⚠️ PlantUML PNG render failed (server error), showing code instead")
+                            st.code(plantuml_code, language='plantuml')
+                            if plantuml_file and os.path.exists(plantuml_file):
+                                st.caption(f"PlantUML file saved: {os.path.basename(plantuml_file)}")
+                        else:
+                            st.info("PlantUML not generated")
 
-                best = similar_templates[0]
-                st.info(f"""
-📚 **Most Similar Template:**
-- Query: "{best['query'][:60]}..."
-- Similarity: {best['combined_score']:.3f}
-- Reused: {best['reuse_count']} times
-- Success: {best['success_rate']:.1%}
-                """)
+            # Store query info for validation (NO extraction yet!)
+            # Extraction will happen AFTER user validates as helpful
+            st.session_state.last_result = {
+                'query': query,
+                'image_path': result['image'],
+                'plantuml_path': result.get('plantuml_image'),
+                'cypher': result['cypher'],
+                'response': result.get('response', ''),
+                'nodes': result.get('nodes', []),
+                'edges': result.get('edges', []),
+                'results': result.get('results', [])
+            }
 
-                # Show past visualization
-                if best['image_path'] and os.path.exists(best['image_path']):
-                    st.image(
-                        best['image_path'],
-                        caption=f"Past visualization (reused {best['reuse_count']} times)",
-                        use_container_width=True
-                    )
-            else:
-                st.warning("No similar templates found (will create new one)")
+            with st.expander("🔍 Query Details"):
+                st.write("**Generated Cypher:**")
+                st.code(result['cypher'], language='cypher')
+                st.write(f"**Results:** {len(result.get('results', []))} records from Neo4j")
+                st.write(f"**Nodes in visualization:** {len(result.get('nodes', []))}")
+                st.write(f"**Edges in visualization:** {len(result.get('edges', []))}")
+                st.info("💡 Vision extraction will occur ONLY if you mark this as helpful (saves API quota!)")
+        else:
+            st.warning("No results found")
 
-            # Run with adaptive
-            with st.spinner("Running adaptive pipeline..."):
-                adaptive_result = st.session_state.base_pipeline.run(query)
-
-                # Extract structure from visualization
-                if adaptive_result.get('image') and os.path.exists(adaptive_result['image']):
-                    with st.spinner("Extracting structure from visualization..."):
-                        graph_structure = st.session_state.vision_extractor.extract_complete_structure(
-                            adaptive_result['image']
-                        )
-
-                        # Show extracted info
-                        st.success("✅ Adaptive completed + Vision extracted!")
-
-                        if graph_structure['entities']:
-                            st.info(f"""
-🎯 **Extracted from Image:**
-- Entities: {len(graph_structure['entities'])} nodes
-- Relationships: {len(graph_structure['relationships'])} edges
-- Topology: {graph_structure['topology'].get('topology_type', 'unknown')}
-- Central nodes: {len(graph_structure['topology'].get('central_nodes', []))}
-                            """)
-
-                            # Build reasoning path
-                            reasoning_path = ReasoningPathBuilder.build_reasoning_path(
-                                graph_structure=graph_structure,
-                                query=query,
-                                cypher=adaptive_result['cypher'],
-                                response=adaptive_result.get('response', '')
-                            )
-
-                            # Store for validation
-                            st.session_state.last_result = {
-                                'reasoning_path': reasoning_path,
-                                'image_path': adaptive_result['image'],
-                                'plantuml_path': adaptive_result.get('plantuml_image')
-                            }
-
-                            # Show topology
-                            with st.expander("🔍 Reasoning Path Details"):
-                                st.json({
-                                    'central_nodes': reasoning_path['central_nodes'],
-                                    'topology': reasoning_path['topology'],
-                                    'pattern': reasoning_path['pattern']
-                                })
-
-                        # Show current visualization
-                        st.image(
-                            adaptive_result['image'],
-                            caption="Current visualization",
-                            use_container_width=True
-                        )
-    else:
-        # ADAPTIVE ONLY MODE
-        # Search for similar
-        similar_templates = st.session_state.template_db.find_similar_templates(
-            query=query,
-            top_k=3,
-            min_score=min_similarity,
-            require_validated=True
-        )
-
-        if similar_templates:
-            st.success(f"🔍 Found {len(similar_templates)} similar patterns!")
-
-            # Show similar templates
-            for i, template in enumerate(similar_templates[:2], 1):
-                with st.expander(f"Similar Query {i}: {template['query'][:50]}... (Score: {template['combined_score']:.3f})"):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write(f"**Reused:** {template['reuse_count']} times")
-                        st.write(f"**Success:** {template['success_rate']:.1%}")
-                        st.write(f"**Topology:** {template['topology']}")
-                    with col_b:
-                        if template['image_path'] and os.path.exists(template['image_path']):
-                            st.image(template['image_path'], use_container_width=True)
-
-        # Run pipeline
-        with st.spinner("Running adaptive pipeline..."):
-            result = st.session_state.base_pipeline.run(query)
-
-            # Check if we got results
-            if not result.get('nodes') or len(result.get('nodes', [])) == 0:
-                st.warning("⚠️ No results found - query returned 0 records from Neo4j")
-                st.info(f"Query: `{result.get('cypher', 'N/A')}`")
-                st.session_state.last_result = None
-            # Extract and store
-            elif result.get('image'):
-                graph_structure = st.session_state.vision_extractor.extract_complete_structure(
-                    result['image']
-                )
-
-                reasoning_path = ReasoningPathBuilder.build_reasoning_path(
-                    graph_structure=graph_structure,
-                    query=query,
-                    cypher=result['cypher'],
-                    response=result.get('response', '')
-                )
-
-                st.session_state.last_result = {
-                    'reasoning_path': reasoning_path,
-                    'image_path': result['image'],
-                    'plantuml_path': result.get('plantuml_image'),
-                    'query': query
-                }
-
-                # Display
-                st.success("✅ Query completed!")
-                if result.get('response'):
-                    st.info(f"💬 {result['response']}")
-
-                st.image(result['image'], use_container_width=True)
-
-                with st.expander("🔍 Extracted Structure"):
-                    st.json(reasoning_path)
-
-# Validation form - OUTSIDE query processing block so it persists on rerun
+# Validation form (OUTSIDE query block!)
 if st.session_state.get('last_result'):
     st.markdown("---")
-    with st.form("validation_form"):
-        st.subheader("⭐ Validate This Visualization")
-        st.write(f"Query: *{st.session_state.last_result.get('query', 'Unknown')}*")
+    with st.form("validation"):
+        st.subheader("Validate & Teach the System")
+        st.write(f"Query: *{st.session_state.last_result.get('query')}*")
 
-        helpful = st.radio("Was this visualization helpful?", ["Yes", "No"])
-        score = st.slider("Helpfulness Score", 0.0, 1.0, 0.8, 0.1)
-        feedback = st.text_area("Optional feedback:")
+        helpful = st.radio("Helpful?", ["Yes", "No"])
+        score = st.slider("Score", 0.0, 1.0, 0.8, 0.1)
 
-        submitted = st.form_submit_button("💾 Submit Validation")
+        st.write("**Feedback teaches the system:**")
+        st.caption("Be specific! Say what you liked/disliked. The LLM will read and apply this.")
 
-        if submitted:
+        feedback = st.text_area(
+            "Feedback (tell the system what to do differently):",
+            placeholder='e.g., "Perfect! Shows duplicates I needed" or "Missing AFFECTS relationships"'
+        )
+
+        submit = st.form_submit_button("Submit Feedback")
+
+        if submit:
+            # ONLY extract if helpful (saves API quota!)
+            if helpful == "Yes" and score >= 0.5:
+                # User found it helpful - extract structure from image
+                with st.spinner("🔍 Extracting structure from visualization (only for helpful queries)..."):
+                    graph_structure = st.session_state.vision_extractor.extract_complete_structure(
+                        st.session_state.last_result['image_path']
+                    )
+
+                    reasoning_path = ReasoningPathBuilder.build_reasoning_path(
+                        graph_structure=graph_structure,
+                        query=st.session_state.last_result['query'],
+                        cypher=st.session_state.last_result['cypher'],
+                        response=st.session_state.last_result['response']
+                    )
+
+                    st.info(f"✅ Extracted: {len(graph_structure['entities'])} entities, "
+                           f"{len(graph_structure['relationships'])} relationships, "
+                           f"topology: {graph_structure['topology'].get('topology_type')}")
+
+            else:
+                # Not helpful - create minimal reasoning path (no extraction needed)
+                reasoning_path = {
+                    'query': st.session_state.last_result['query'],
+                    'query_type': 'unknown',
+                    'cypher_query': st.session_state.last_result['cypher'],
+                    'response': st.session_state.last_result['response'],
+                    'central_nodes': [],
+                    'entities': st.session_state.last_result.get('nodes', []),  # Use pipeline data
+                    'relationships': [],
+                    'topology': {'type': 'unknown', 'has_multiple_hubs': False, 'has_clusters': False, 'clusters': {}},
+                    'pattern': {
+                        'node_count': len(st.session_state.last_result.get('nodes', [])),
+                        'edge_count': len(st.session_state.last_result.get('edges', [])),
+                        'depth': 0,
+                        'density': 0
+                    },
+                    'image_path': st.session_state.last_result['image_path']
+                }
+
+                st.warning("⚠️ Skipped vision extraction (not helpful - saves API quota)")
+
             # Store template
             template_id = st.session_state.template_db.store_template(
-                reasoning_path=st.session_state.last_result['reasoning_path'],
+                reasoning_path=reasoning_path,
                 image_path=st.session_state.last_result['image_path'],
                 plantuml_path=st.session_state.last_result.get('plantuml_path'),
                 user_helpful=(helpful == "Yes"),
-                helpfulness_score=score if helpful == "Yes" else 0.3,
+                helpfulness_score=score if helpful == "Yes" else score,
                 user_feedback=feedback if feedback else None
             )
 
-            st.success(f"✅ Stored as template: {template_id}")
-            st.balloons()
+            st.success(f"✅ Stored! LLM will see this feedback on future similar queries")
+            if helpful == "Yes":
+                st.balloons()
 
-            # Clear state and rerun
             st.session_state.last_result = None
             st.rerun()
 
-# History section
-st.markdown("---")
-st.header("📈 Learning Progress")
-
-col_hist1, col_hist2, col_hist3 = st.columns(3)
-
-with col_hist1:
-    st.metric(
-        "Templates Stored",
-        stats['total_templates'] or 0,
-        help="Total reasoning patterns learned"
-    )
-
-with col_hist2:
-    st.metric(
-        "Pattern Reuses",
-        stats['total_reuses'] or 0,
-        help="How many times patterns were reused"
-    )
-
-with col_hist3:
-    st.metric(
-        "Success Rate",
-        f"{stats['average_success_rate'] or 0:.1%}",
-        help="% of reused patterns that were helpful"
-    )
-
-# Show recent templates
-with st.expander("📚 View Stored Templates"):
-    # Get all templates
-    with st.session_state.template_db.driver.session() as session:
-        result = session.run("""
-            MATCH (rt:ReasoningTemplate)
-            RETURN rt.template_id as id,
-                   rt.query as query,
-                   rt.topology_type as topology,
-                   rt.reuse_count as reuses,
-                   rt.success_rate as success,
-                   rt.helpfulness_score as score,
-                   rt.network_image_path as image
-            ORDER BY rt.reuse_count DESC, rt.success_rate DESC
-            LIMIT 10
-        """)
-
-        templates = [dict(record) for record in result]
-
-    if templates:
-        for template in templates:
-            col_t1, col_t2, col_t3 = st.columns([3, 1, 1])
-
-            with col_t1:
-                st.write(f"**{template['query'][:60]}...**")
-                st.caption(f"Topology: {template['topology']}")
-
-            with col_t2:
-                st.write(f"Reused: {template['reuses']}")
-                st.write(f"Score: {template['score']:.2f}")
-
-            with col_t3:
-                if template['success'] is not None:
-                    st.write(f"Success: {template['success']:.0%}")
-
-            st.markdown("---")
-    else:
-        st.info("No templates stored yet. Run some queries to build the template library!")
-
 # Footer
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-    🧠 Adaptive Learning System | Vision: GLM-4.5V | LLM: Qwen 2.5 Coder | DB: Neo4j
-</div>
-""", unsafe_allow_html=True)
+st.caption("Adaptive Learning: Templates + Feedbacks passed to LLM")

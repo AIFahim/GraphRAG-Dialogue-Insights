@@ -39,12 +39,16 @@ class TemplateDatabase:
     Stores learned patterns WITHOUT corrupting ground truth
     """
 
-    def __init__(self):
+    def __init__(self, node_label: str = "ReasoningTemplate"):
         # Connect to template database
         self.driver = GraphDatabase.driver(
             TEMPLATE_NEO4J_URI,
             auth=(TEMPLATE_NEO4J_USER, TEMPLATE_NEO4J_PASSWORD)
         )
+
+        # Node label for templates (allows separate databases for comparison)
+        self.node_label = node_label
+        print(f"Using template node label: {self.node_label}")
 
         # Embedding model for similarity search
         print("Loading embedding model...")
@@ -82,11 +86,13 @@ class TemplateDatabase:
             reasoning_path['query']
         ).tolist()
 
-        # Store in Neo4j (with CLEAR label: ReasoningTemplate)
+        # Store in Neo4j (with configurable label for separate databases)
         with self.driver.session() as session:
-            session.run("""
-                CREATE (rt:ReasoningTemplate {
-                    template_id: $template_id,
+            # Build query with label (avoid f-string brace escaping issues)
+            query = """
+                CREATE (rt:%s {
+                    template_id: $template_id,""" % self.node_label
+            query += """
 
                     // Query info
                     query: $query,
@@ -133,7 +139,9 @@ class TemplateDatabase:
                     source: 'vision_extraction',
                     extraction_method: 'Qwen2-VL'
                 })
-            """, {
+            """
+
+            session.run(query, {
                 'template_id': template_id,
                 'query': reasoning_path['query'],
                 'query_type': reasoning_path['query_type'],
@@ -187,8 +195,8 @@ class TemplateDatabase:
         query_embedding = self.embedding_model.encode(query)
 
         with self.driver.session() as session:
-            result = session.run("""
-                MATCH (rt:ReasoningTemplate)
+            result = session.run(f"""
+                MATCH (rt:{self.node_label})
                 WHERE ($require_validated = false OR rt.is_validated = true)
                   AND rt.helpfulness_score >= $min_score
                 RETURN rt.template_id as template_id,
@@ -273,8 +281,8 @@ class TemplateDatabase:
         This is the LEARNING component!
         """
         with self.driver.session() as session:
-            session.run("""
-                MATCH (rt:ReasoningTemplate {template_id: $template_id})
+            session.run(f"""
+                MATCH (rt:{self.node_label} {{template_id: $template_id}})
                 SET rt.reuse_count = rt.reuse_count + 1,
                     rt.success_count = rt.success_count + CASE WHEN $helpful THEN 1 ELSE 0 END,
                     rt.success_rate = toFloat(rt.success_count + CASE WHEN $helpful THEN 1 ELSE 0 END) /
@@ -296,8 +304,8 @@ class TemplateDatabase:
         """
 
         with self.driver.session() as session:
-            result = session.run("""
-                MATCH (rt:ReasoningTemplate)
+            result = session.run(f"""
+                MATCH (rt:{self.node_label})
                 RETURN rt.template_id as template_id,
                        rt.query as query,
                        rt.cypher_query as cypher,
@@ -335,8 +343,8 @@ class TemplateDatabase:
     def get_template_stats(self) -> Dict:
         """Get statistics about stored templates"""
         with self.driver.session() as session:
-            result = session.run("""
-                MATCH (rt:ReasoningTemplate)
+            result = session.run(f"""
+                MATCH (rt:{self.node_label})
                 RETURN count(rt) as total_templates,
                        sum(CASE WHEN rt.is_validated THEN 1 ELSE 0 END) as validated_count,
                        avg(rt.helpfulness_score) as avg_score,
@@ -405,14 +413,14 @@ class TemplateDatabase:
     def _initialize_schema(self):
         """Initialize database schema"""
         with self.driver.session() as session:
-            # Create index for faster queries
-            session.run("""
-                CREATE INDEX template_id_index IF NOT EXISTS
-                FOR (rt:ReasoningTemplate) ON (rt.template_id)
+            # Create indexes for faster queries (using configurable label)
+            session.run(f"""
+                CREATE INDEX template_id_index_{self.node_label} IF NOT EXISTS
+                FOR (rt:{self.node_label}) ON (rt.template_id)
             """)
-            session.run("""
-                CREATE INDEX query_type_index IF NOT EXISTS
-                FOR (rt:ReasoningTemplate) ON (rt.query_type)
+            session.run(f"""
+                CREATE INDEX query_type_index_{self.node_label} IF NOT EXISTS
+                FOR (rt:{self.node_label}) ON (rt.query_type)
             """)
 
     def close(self):
