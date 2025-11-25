@@ -23,7 +23,7 @@ from template_database import TemplateDatabase
 
 # Page config
 st.set_page_config(
-    page_title="TRUE Adaptive GraphRAG",
+    page_title="Adaptive GraphRAG",
     page_icon="🧠",
     layout="wide"
 )
@@ -37,8 +37,7 @@ if 'template_db' not in st.session_state:
     st.session_state.template_db = TemplateDatabase()
 
 # Header
-st.title("🧠 TRUE Adaptive GraphRAG")
-st.markdown("**System that ACTUALLY learns from your feedback**")
+st.title("Adaptive GraphRAG")
 st.markdown("---")
 
 # Sidebar
@@ -55,20 +54,20 @@ with st.sidebar:
     st.markdown("---")
 
     # Show what system learned
-    st.header("🎓 System Has Learned")
+    st.header("System Has Learned")
 
     all_templates = st.session_state.template_db.get_all_templates()
 
     if all_templates:
         positive = [t for t in all_templates if t['helpfulness_score'] >= 0.7 and t['user_feedback']]
         if positive:
-            st.subheader("✅ User Loved:")
+            st.subheader("User Approved:")
             for t in positive[:3]:
                 st.success(f'"{t["user_feedback"][:80]}..."')
 
         negative = [t for t in all_templates if t['helpfulness_score'] < 0.5 and t['user_feedback']]
         if negative:
-            st.subheader("❌ User Disliked:")
+            st.subheader("User Disapproved:")
             for t in negative[:3]:
                 st.error(f'"{t["user_feedback"][:80]}..."')
     else:
@@ -76,15 +75,15 @@ with st.sidebar:
 
 # Main content
 query = st.text_input(
-    "🔎 Ask a question:",
+    "Ask a question:",
     placeholder="e.g., Show me all relationships for MRM-681"
 )
 
-run_btn = st.button("🚀 Run with TRUE Learning", type="primary", use_container_width=True)
+run_btn = st.button("Run", type="primary", use_container_width=True)
 
 if run_btn and query:
     # Search for similar (show user what LLM will see)
-    with st.expander("🔍 What LLM Will See", expanded=True):
+    with st.expander("LLM Context", expanded=True):
         similar = st.session_state.template_db.find_similar_templates(query, top_k=2, min_score=0.5)
 
         if similar:
@@ -103,11 +102,11 @@ if run_btn and query:
                     st.write(f"{emoji} \"{t['user_feedback'][:60]}...\" (score: {t['helpfulness_score']:.2f})")
 
     # Run with adaptive learning
-    with st.spinner("🧠 Running with TRUE adaptive learning..."):
+    with st.spinner("Running..."):
         result = st.session_state.adaptive_pipeline.run(query)
 
         if result.get('nodes'):
-            st.success("✅ Query completed with learning applied!")
+            st.success("Query completed with learning applied!")
 
             if result.get('response'):
                 st.info(f"💬 {result['response']}")
@@ -178,7 +177,7 @@ if st.session_state.get('last_result'):
         helpful = st.radio("Helpful?", ["Yes", "No"])
         score = st.slider("Score", 0.0, 1.0, 0.8, 0.1)
 
-        st.write("**💡 Your feedback teaches the system:**")
+        st.write("**Feedback teaches the system:**")
         st.caption("Be specific! Say what you liked/disliked. The LLM will read and apply this.")
 
         feedback = st.text_area(
@@ -186,7 +185,7 @@ if st.session_state.get('last_result'):
             placeholder='e.g., "Perfect! Shows duplicates I needed" or "Missing AFFECTS relationships"'
         )
 
-        submit = st.form_submit_button("💾 Submit & Teach System")
+        submit = st.form_submit_button("Submit Feedback")
 
         if submit:
             # ONLY extract if helpful (saves API quota!)
@@ -249,4 +248,4 @@ if st.session_state.get('last_result'):
 
 # Footer
 st.markdown("---")
-st.caption("🧠 TRUE Adaptive Learning: Templates + Feedbacks passed to LLM")
+st.caption("Adaptive Learning: Templates + Feedbacks passed to LLM")

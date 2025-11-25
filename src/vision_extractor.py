@@ -98,6 +98,9 @@ JSON list:"""
         # Call vision API (raises exception on error - no fallback)
         result = self._call_vision_api(image_path, prompt, max_tokens=512)
 
+        # Clean special tokens from vision model response
+        result = result.replace('<|begin_of_box|>', '').replace('<|end_of_box|>', '').strip()
+
         # Parse JSON response
         try:
             entities = json.loads(result)
@@ -136,6 +139,9 @@ JSON array:"""
         # Call vision API (raises exception on error)
         result = self._call_vision_api(image_path, prompt, max_tokens=1024)
 
+        # Clean special tokens from vision model response
+        result = result.replace('<|begin_of_box|>', '').replace('<|end_of_box|>', '').strip()
+
         # Parse JSON response
         try:
             relationships = json.loads(result)
@@ -172,6 +178,9 @@ JSON:"""
 
         # Call vision API (raises exception on error)
         result = self._call_vision_api(image_path, prompt, max_tokens=512)
+
+        # Clean special tokens from vision model response
+        result = result.replace('<|begin_of_box|>', '').replace('<|end_of_box|>', '').strip()
 
         # Parse JSON response
         try:
