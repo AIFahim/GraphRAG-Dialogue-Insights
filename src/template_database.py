@@ -15,6 +15,17 @@ from neo4j import GraphDatabase
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+from huggingface_hub import InferenceClient
+
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+HF_TOKEN = os.environ.get("HF_TOKEN")
+LLM_MODEL = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
 
 # Storage configuration
@@ -54,6 +65,11 @@ class TemplateDatabase:
         print("Loading embedding model...")
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         print("Embedding model loaded")
+
+        # LLM client for structural metadata extraction
+        print("Initializing LLM client for metadata extraction...")
+        self.llm_client = InferenceClient(token=HF_TOKEN)
+        print("LLM client initialized")
 
         # Initialize schema
         self._initialize_schema()
@@ -230,18 +246,20 @@ class TemplateDatabase:
                     template_emb.reshape(1, -1)
                 )[0][0]
 
-                # Calculate structural similarity
-                structural_sim = self._calculate_structural_similarity(
-                    query,
-                    json.loads(record['entities']),
-                    record['query_type']
-                )
+                # Calculate structural similarity using LLM
+                # structural_sim = self._calculate_structural_similarity(
+                #     new_query=query,
+                #     template_query=record['template_query'],
+                #     template_cypher=record['cypher'],
+                #     template_entities=json.loads(record['entities']),
+                #     template_relationships=json.loads(record['relationships'])
+                # )
 
                 # Combined score
                 combined_score = (
-                    0.5 * semantic_sim +           # Semantic
-                    0.3 * structural_sim +         # Structural
-                    0.2 * record['success_rate']   # Historical
+                    0.7 * semantic_sim +           # Semantic
+                    # 0.3 * structural_sim +         # Structural
+                    0.3 * record['success_rate']   # Historical
                 )
 
                 templates.append({
@@ -249,7 +267,7 @@ class TemplateDatabase:
                     'query': record['template_query'],
                     'query_type': record['query_type'],
                     'semantic_similarity': float(semantic_sim),
-                    'structural_similarity': float(structural_sim),
+                    # 'structural_similarity': float(structural_sim),  # REMOVED: unfair comparison
                     'combined_score': float(combined_score),
                     'central_nodes': json.loads(record['central_nodes']),
                     'entities': json.loads(record['entities']),
@@ -374,41 +392,95 @@ class TemplateDatabase:
         shutil.copy2(source_path, dest_path)
         return dest_path
 
-    def _calculate_structural_similarity(
-        self,
-        query: str,
-        template_entities: List[str],
-        template_query_type: str
-    ) -> float:
-        """Calculate structural similarity between queries"""
-        import re
-
-        # Extract entities from query
-        query_entities = re.findall(r'MRM-\d+', query)
-
-        # Query type match
-        query_type = self._classify_query_type(query)
-        type_match = 1.0 if query_type == template_query_type else 0.5
-
-        # Entity overlap
-        if not query_entities:
-            entity_sim = 0.0
-        else:
-            overlap = len(set(query_entities) & set(template_entities))
-            entity_sim = overlap / len(query_entities)
-
-        return 0.6 * type_match + 0.4 * entity_sim
-
-    def _classify_query_type(self, query: str) -> str:
-        """Classify query type"""
-        q = query.lower()
-        if 'relate' in q:
-            return 'relationship'
-        elif 'depend' in q:
-            return 'dependency'
-        elif 'assign' in q or 'who' in q:
-            return 'assignment'
-        return 'general'
+#     def _calculate_structural_similarity(
+#         self,
+#         new_query: str,
+#         template_query: str,
+#         template_cypher: str,
+#         template_entities: List[str],
+#         template_relationships: List[Dict]
+#     ) -> float:
+#         """
+#         Calculate structural similarity between new query and template using LLM.
+#
+#         LLM analyzes both queries and determines how structurally similar they are
+#         based on query intent, entity types, relationship types, and patterns.
+#
+#         Args:
+#             new_query: The user's new query
+#             template_query: The stored template's original query
+#             template_cypher: The Cypher query that worked for the template
+#             template_entities: Entities extracted from template's visualization
+#             template_relationships: Relationships extracted from template's visualization
+#
+#         Returns:
+#             Similarity score between 0.0 and 1.0
+#         """
+#
+#         # Format relationships for prompt
+#         rel_types = list(set(r.get('type', r.get('label', 'UNKNOWN')) for r in template_relationships)) if template_relationships else []
+#
+#         prompt = f"""You are comparing two Issue Tracking System queries to determine structural similarity.
+#
+# NEW QUERY (user is asking this now):
+# "{new_query}"
+#
+# TEMPLATE QUERY (worked successfully before):
+# "{template_query}"
+#
+# TEMPLATE'S SUCCESSFUL CYPHER:
+# {template_cypher}
+#
+# TEMPLATE PRODUCED THESE RESULTS:
+# - Entities found: {template_entities[:10]}{'...' if len(template_entities) > 10 else ''}
+# - Relationship types found: {rel_types}
+#
+# TASK: Score how structurally similar these two queries are from 0.0 to 1.0.
+#
+# Consider:
+# 1. QUERY INTENT: Do both queries ask for the same type of information?
+#    (e.g., both asking for relationships, both asking for assignments, both listing issues)
+#
+# 2. ENTITY PATTERN: Do both queries target similar types of entities?
+#    (e.g., both query specific issues like MRM-*, both query persons, both query components)
+#
+# 3. RELATIONSHIP SCOPE: Do both queries request similar relationship coverage?
+#    (e.g., both want ALL relationships, both want specific type like DUPLICATES)
+#
+# 4. QUERY STRUCTURE: Would the same Cypher pattern likely work for both?
+#
+# Scoring guide:
+# - 1.0: Nearly identical structure (same intent, same entity pattern, same scope)
+# - 0.8: Very similar (same intent, similar patterns)
+# - 0.6: Moderately similar (related intent, some pattern overlap)
+# - 0.4: Somewhat similar (different intent but same domain)
+# - 0.2: Low similarity (different intent and patterns)
+# - 0.0: Completely different queries
+#
+# Return ONLY a single decimal number between 0.0 and 1.0, nothing else:"""
+#
+#         try:
+#             response = self.llm_client.chat_completion(
+#                 messages=[{"role": "user", "content": prompt}],
+#                 model=LLM_MODEL,
+#                 max_tokens=16,
+#                 temperature=0.1
+#             )
+#
+#             content = response.choices[0].message.content.strip()
+#
+#             # Extract number from response
+#             import re
+#             numbers = re.findall(r'(\d+\.?\d*)', content)
+#             if numbers:
+#                 score = float(numbers[0])
+#                 # Clamp to valid range
+#                 return max(0.0, min(1.0, score))
+#             else:
+#                 raise ValueError(f"Could not parse LLM score from response: '{content}'")
+#
+#         except Exception as e:
+#             raise RuntimeError(f"LLM structural similarity failed: {e}")
 
     def _initialize_schema(self):
         """Initialize database schema"""

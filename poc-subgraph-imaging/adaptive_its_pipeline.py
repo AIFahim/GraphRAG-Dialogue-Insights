@@ -259,6 +259,139 @@ Pattern {i} (Similarity: {template['combined_score']:.3f}, Score: {template['hel
         # This calls our overridden llm_generate_cypher() above
         return super().run(user_query)
 
+    def llm_analyze_results(self, user_query: str, results: list, context: dict = None) -> dict:
+        """
+        OVERRIDE: Analyze results with learned visualization patterns
+
+        Makes the SECOND LLM call also adaptive (not just Cypher generation).
+        Reuses _build_learned_context() to avoid code duplication.
+        """
+
+        print(f"\n[Adaptive Analysis] Using learned visualization patterns...")
+
+        # Retrieve templates (same as Cypher generation)
+        templates = self.template_db.find_similar_templates(
+            query=user_query,
+            top_k=2,
+            min_score=0.6,
+            require_validated=True
+        )
+
+        all_feedbacks = self._get_all_feedbacks()
+
+        # Build base prompt parts
+        results_json = json.dumps(results[:15], indent=2, default=str)
+
+        context_info = ""
+        if context and context.get('edges'):
+            context_json = json.dumps(context['edges'][:20], indent=2, default=str)
+            context_info = f"""
+
+Additional Context (1-hop neighboring edges):
+{context_json}
+"""
+
+        # Reuse learned context builder if templates exist
+        learned_viz_context = ""
+        if templates or all_feedbacks:
+            learned_viz_context = self._build_learned_context(templates, all_feedbacks)
+            learned_viz_context += """
+
+APPLY LEARNED PATTERNS TO VISUALIZATION:
+- Include relationship types that were successful (especially DUPLICATES if in results)
+- Match node/edge count from similar successful visualizations
+- Emphasize relationships users valued in feedback
+"""
+
+        # Build complete prompt
+        prompt = f"""User asked: {user_query}
+
+Main query results:
+{results_json}
+{context_info}
+
+{learned_viz_context}
+
+Analyze these results (including context if provided) and return JSON with:
+1. "response": Natural language answer (2-3 sentences, explain what you found INCLUDING insights from context)
+2. "nodes": list of ALL node IDs/names to show in graph (from main results + useful context)
+3. "edges": list of {{"source": "...", "target": "...", "label": "...", "is_context": true/false}}
+   - is_context=false for main query edges
+   - is_context=true for context edges
+4. "suggestions": 5 natural language follow-up questions (based on available relationships in context)
+Analyze these results and return JSON with:
+Return JSON only:
+1. "response": Natural language answer (2-3 sentences, emphasize DUPLICATES if present)
+{{
+2. "nodes": list of ALL node IDs/names to show in graph
+    "response": "I found 2 related issues for MRM-488. Based on context, these bugs also affect the Web Interface component and are assigned to Martin Stockhammer.",
+    "nodes": ["MRM-488", "MRM-615", "MRM-487", "Web Interface", "Martin Stockhammer"],
+    "edges": [
+3. "edges": list of {{"source": "...", "target": "...", "label": "...", "is_context": true/false}}
+        {{"source": "MRM-488", "target": "MRM-615", "label": "RELATES_TO", "is_context": false}},
+   - INCLUDE DUPLICATES edges if they exist in results!
+        {{"source": "MRM-488", "target": "Web Interface", "label": "AFFECTS", "is_context": true}}
+4. "suggestions": 5 follow-up questions
+    ],
+    "suggestions": ["Who is assigned to MRM-615?", "What other components are affected?", ...]
+}}"""
+
+        # Call LLM
+        response = self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            model="Qwen/Qwen2.5-Coder-7B-Instruct",
+            max_tokens=1536,
+            temperature=0.3
+        )
+
+        content = response.choices[0].message.content.strip()
+
+        # Parse JSON
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"  JSON parse error: {e}")
+            print("  Extracting basic info from malformed response...")
+
+            # Fallback: Extract nodes manually
+            nodes = []
+            edges = []
+
+            # Extract Issue IDs from results
+            for record in results[:10]:
+                for val in record.values():
+                    if isinstance(val, str) and val.startswith('MRM-'):
+                        if val not in nodes:
+                            nodes.append(val)
+
+            # Try to extract edges from context
+            if context and context.get('edges'):
+                for ctx_edge in context['edges'][:10]:
+                    edges.append({
+                        "source": ctx_edge.get('source'),
+                        "target": ctx_edge.get('target'),
+                        "label": ctx_edge.get('rel'),
+                        "is_context": True
+                    })
+
+            return {
+                "response": f"Found {len(results)} results. (Note: Full analysis unavailable due to formatting issue)",
+                "nodes": nodes[:15],
+                "edges": edges[:15],
+                "suggestions": [
+                    "Show more details about these issues",
+                    "Who is assigned to these?",
+                    "What components are affected?",
+                    "Show related bugs",
+                    "Check dependencies"
+                ]
+            }
+
     def close(self):
         """Clean up resources"""
         super().close()
