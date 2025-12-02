@@ -109,14 +109,40 @@ class AdaptiveITSPipeline(SimpleLLMPipeline):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NEW USER QUERY: {user_query}
 
-INSTRUCTIONS:
-1. Analyze the similar successful patterns above
-2. Read ALL user feedback carefully (both positive and negative)
-3. STRICTLY FOLLOW what users said they wanted
-4. AVOID patterns users complained about
-5. Include relationship types users valued (DUPLICATES, AFFECTS, etc.)
-6. Apply the successful Cypher patterns shown above
-7. Match the graph structure users found helpful
+⚠️  MANDATORY INSTRUCTIONS - STRICT COMPLIANCE REQUIRED ⚠️
+
+1. VISION-VALIDATED RELATIONSHIP TYPES ARE MANDATORY:
+   - Above patterns show "⚠️  VISION-VALIDATED RELATIONSHIP TYPES THAT WERE ACTUALLY PRESENT"
+   - These types were CONFIRMED to exist in successful query results
+   - You MUST include ALL these relationship types in your WHERE clause
+   - Format: WHERE type(r) IN ['TYPE1', 'TYPE2', ...]
+   - Missing ANY validated type = SYSTEM FAILURE
+
+2. HOW TO APPLY RELATIONSHIP TYPES:
+   - Look at "⚠️  YOU MUST INCLUDE THESE TYPES IN YOUR QUERY" section above
+   - This shows EXACT syntax you must use
+   - Copy the WHERE type(r) IN [...] clause with ALL types listed
+   - DO NOT use generic -[r]- without WHERE clause
+   - DO NOT filter or reduce the relationship types list
+
+3. USER FEEDBACK GOVERNS YOUR BEHAVIOR:
+   - What users explicitly approved (✅) → You MUST replicate this behavior
+   - What users explicitly rejected (❌) → You MUST avoid this behavior completely
+   - User validation overrides default LLM preferences
+
+4. QUERY STRUCTURE REQUIREMENTS:
+   - Use MATCH (i:Issue {{id: 'XXX'}})-[r]-(related)
+   - Add WHERE type(r) IN [<all validated types from above>]
+   - Return i.id, type(r), related.id
+   - Include ALL relationship types shown in vision-validated list
+
+5. STRICTLY AVOID REJECTED PATTERNS:
+   - Any behavior users complained about is forbidden
+   - Generic queries without relationship type filters are REJECTED
+   - Incomplete queries missing validated types are REJECTED
+
+This is an adaptive system. Vision analysis PROVED which relationship types existed
+in successful queries. Your task is to include ALL validated types WITHOUT FAIL.
 
 CRITICAL: Return ONLY the Cypher query, NO explanations, NO comments.
 
@@ -175,17 +201,32 @@ Return ONLY the Cypher query, no explanation."""
 
         # Add selected template details
         for i, template in enumerate(similar_templates, 1):
+            # Extract unique relationship types from template
+            rel_types = set()
+            if template.get('relationships'):
+                for rel in template['relationships']:
+                    if isinstance(rel, dict) and 'type' in rel:
+                        rel_types.add(rel['type'])
+
+            rel_types_list = sorted(rel_types) if rel_types else []
+            rel_types_str = f"WHERE type(r) IN {rel_types_list}" if rel_types_list else "No filter specified"
+
             context += f"""
 Pattern {i} (Similarity: {template['combined_score']:.3f}, Score: {template['helpfulness_score']}/1.0):
 
   Query: "{template['query']}"
 
-  Successful Cypher:
+  Original Cypher (may be incomplete):
   {template['cypher']}
+
+  ⚠️  VISION-VALIDATED RELATIONSHIP TYPES THAT WERE ACTUALLY PRESENT:
+  {rel_types_list}
+
+  ⚠️  YOU MUST INCLUDE THESE TYPES IN YOUR QUERY:
+  {rel_types_str}
 
   Graph Structure Extracted:
   - Entities shown: {template['entities'][:5]}{'...' if len(template['entities']) > 5 else ''}
-  - Relationships: {template['relationships'][:3] if template['relationships'] else 'N/A'}
   - Topology: {template['topology']}
   - Central nodes: {template['central_nodes']}
   - Depth: {template.get('depth', 'N/A')} hops
