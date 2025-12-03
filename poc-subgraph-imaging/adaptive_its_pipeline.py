@@ -111,19 +111,19 @@ NEW USER QUERY: {user_query}
 
 ⚠️  MANDATORY INSTRUCTIONS - STRICT COMPLIANCE REQUIRED ⚠️
 
-1. VISION-VALIDATED RELATIONSHIP TYPES ARE MANDATORY:
-   - Above patterns show "⚠️  VISION-VALIDATED RELATIONSHIP TYPES THAT WERE ACTUALLY PRESENT"
-   - These types were CONFIRMED to exist in successful query results
-   - You MUST include ALL these relationship types in your WHERE clause
-   - Format: WHERE type(r) IN ['TYPE1', 'TYPE2', ...]
-   - Missing ANY validated type = SYSTEM FAILURE
+1. COMPREHENSIVE RELATIONSHIP TYPE INCLUSION MANDATORY:
+   - For "show all relationships" queries, you MUST include ALL standard types
+   - MANDATORY types to include: RELATES_TO, DUPLICATES, DEPENDS_UPON, AFFECTS, ASSIGNED_TO, REPORTED_BY
+   - Vision-validated types from above confirm which types were successful - but include ALL types for completeness
+   - Format: WHERE type(r) IN ['RELATES_TO', 'DUPLICATES', 'DEPENDS_UPON', 'AFFECTS', 'ASSIGNED_TO', 'REPORTED_BY']
+   - Using only a subset of types = INCOMPLETE QUERY = SYSTEM FAILURE
 
 2. HOW TO APPLY RELATIONSHIP TYPES:
-   - Look at "⚠️  YOU MUST INCLUDE THESE TYPES IN YOUR QUERY" section above
-   - This shows EXACT syntax you must use
-   - Copy the WHERE type(r) IN [...] clause with ALL types listed
+   - ALWAYS use: WHERE type(r) IN ['RELATES_TO', 'DUPLICATES', 'DEPENDS_UPON', 'AFFECTS', 'ASSIGNED_TO', 'REPORTED_BY']
+   - This ensures comprehensive coverage of all relationship types
    - DO NOT use generic -[r]- without WHERE clause
-   - DO NOT filter or reduce the relationship types list
+   - DO NOT use only a subset like ['DUPLICATES'] - you MUST include all 6 types
+   - Vision-validated types above show which types users care about, but query must be comprehensive
 
 3. USER FEEDBACK GOVERNS YOUR BEHAVIOR:
    - What users explicitly approved (✅) → You MUST replicate this behavior
@@ -131,9 +131,10 @@ NEW USER QUERY: {user_query}
    - User validation overrides default LLM preferences
 
 4. QUERY STRUCTURE REQUIREMENTS:
-   - Use MATCH (i:Issue {{id: 'XXX'}})-[r]-(related)
+   - Use MATCH (i:Issue {{id: 'XXX'}})-[r]-(related)  ← CRITICAL: BIDIRECTIONAL (no arrow!)
+   - NEVER use -[r]-> or <-[r]-, ALWAYS use -[r]- to capture both directions
    - Add WHERE type(r) IN [<all validated types from above>]
-   - Return i.id, type(r), related.id
+   - Return i.id, type(r), related.id or related.name, labels(related)[0] as type
    - Include ALL relationship types shown in vision-validated list
 
 5. STRICTLY AVOID REJECTED PATTERNS:
@@ -353,28 +354,30 @@ Main query results:
 
 {learned_viz_context}
 
-Analyze these results (including context if provided) and return JSON with:
-1. "response": Natural language answer (2-3 sentences, explain what you found INCLUDING insights from context)
-2. "nodes": list of ALL node IDs/names to show in graph (from main results + useful context)
-3. "edges": list of {{"source": "...", "target": "...", "label": "...", "is_context": true/false}}
-   - is_context=false for main query edges
-   - is_context=true for context edges
-4. "suggestions": 5 natural language follow-up questions (based on available relationships in context)
-Analyze these results and return JSON with:
-Return JSON only:
-1. "response": Natural language answer (2-3 sentences, emphasize DUPLICATES if present)
-{{
-2. "nodes": list of ALL node IDs/names to show in graph
-    "response": "I found 2 related issues for MRM-488. Based on context, these bugs also affect the Web Interface component and are assigned to Martin Stockhammer.",
-    "nodes": ["MRM-488", "MRM-615", "MRM-487", "Web Interface", "Martin Stockhammer"],
-    "edges": [
-3. "edges": list of {{"source": "...", "target": "...", "label": "...", "is_context": true/false}}
-        {{"source": "MRM-488", "target": "MRM-615", "label": "RELATES_TO", "is_context": false}},
-   - INCLUDE DUPLICATES edges if they exist in results!
-        {{"source": "MRM-488", "target": "Web Interface", "label": "AFFECTS", "is_context": true}}
+⚠️  CRITICAL: The "Additional Context" above contains 1-hop neighboring edges.
+These are edges BETWEEN the entities in the main results
+
+YOU MUST include ALL context edges in your visualization, especially DUPLICATES relationships.
+
+Analyze and return JSON with:
+1. "response": Natural language answer (2-3 sentences, mention DUPLICATES if present in context)
+2. "nodes": ALL node IDs from main results + context
+3. "edges": ALL edges from both main results AND context
+   - For main result edges: {{"source": "...", "target": "...", "label": "...", "is_context": false}}
+   - For context edges: {{"source": "...", "target": "...", "label": "...", "is_context": true}}
 4. "suggestions": 5 follow-up questions
+
+Return ONLY valid JSON, no explanations (REPLACE XYZ and ABC with real numbers, just take as example):
+
+{{
+    "response": Natural language answer (2-3 sentences, explain what you found INCLUDING insights from context),
+    "nodes": ["MRM-615", "MRM-686", "MRM-952", ...],
+    "edges": [
+        {{"source": "MRM-615", "target": "MRM-686", "label": "RELATES_TO", "is_context": false}},
+        {{"source": "MRM-XYZ", "target": "MRM-ABC", "label": "DUPLICATES", "is_context": true}},
+        ...
     ],
-    "suggestions": ["Who is assigned to MRM-615?", "What other components are affected?", ...]
+    "suggestions": ["Who is assigned?", "What components affected?", ...]
 }}"""
 
         # Call LLM

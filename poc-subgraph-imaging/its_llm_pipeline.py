@@ -91,14 +91,15 @@ class SimpleLLMPipeline:
 User question: {user_query}
 
 Determine if this question asks about:
-A) RELATIONSHIPS between entities → Use MATCH (a)-[r]->(b) pattern
+A) RELATIONSHIPS between entities → Use MATCH (a)-[r]-(b) pattern (BIDIRECTIONAL)
 B) Just LISTING or COUNTING entities → Use MATCH (i:Issue) without relationships
 
 Then generate appropriate Cypher:
 
 TYPE A - Relationship queries (e.g., "what relates to X", "who is assigned", "dependencies"):
-MATCH (i:Issue)-[r:RELATES_TO]->(j:Issue)
-RETURN i.id as source, type(r) as rel, j.id as target LIMIT 10
+MATCH (i:Issue)-[r]-(j)
+WHERE type(r) IN ['RELATES_TO', 'DUPLICATES', 'DEPENDS_UPON', 'AFFECTS', 'ASSIGNED_TO', 'REPORTED_BY']
+RETURN i.id as source, type(r) as rel, j.id as target, labels(j)[0] as target_type LIMIT 10
 
 TYPE B - Listing/Counting (e.g., "find bugs", "how many", "list issues"):
 MATCH (i:Issue {{type: 'Bug', status: 'Closed'}})
@@ -270,19 +271,25 @@ Return ONLY the Cypher query, no explanation."""
     def draw_graph(self, graph_spec: dict, filename: str) -> str:
         """Simple matplotlib drawing from LLM specification"""
 
-        G = nx.DiGraph()
+        # Use MultiDiGraph to support multiple edges between same nodes
+        G = nx.MultiDiGraph()
 
-        # Add nodes
+        # Add nodes (filter out None)
         for node in graph_spec.get("nodes", []):
-            G.add_node(node)
+            if node is not None:
+                G.add_node(node)
 
-        # Add edges
+        # Add edges (filter out None source/target)
         for edge in graph_spec.get("edges", []):
-            G.add_edge(
-                edge["source"],
-                edge["target"],
-                label=edge.get("label", "")
-            )
+            source = edge.get("source")
+            target = edge.get("target")
+            if source is not None and target is not None:
+                G.add_edge(
+                    source,
+                    target,
+                    label=edge.get("label", ""),
+                    is_context=edge.get("is_context", False)
+                )
 
         # Draw
         plt.figure(figsize=(14, 10))
@@ -296,29 +303,56 @@ Return ONLY the Cypher query, no explanation."""
                                node_size=3000, alpha=0.9)
         nx.draw_networkx_labels(G, pos, font_size=9, font_weight='bold')
 
-        # Draw edges with different styles for direct vs context
-        direct_edges = [(e["source"], e["target"]) for e in graph_spec.get("edges", [])
-                        if not e.get("is_context", False)]
-        context_edges = [(e["source"], e["target"]) for e in graph_spec.get("edges", [])
-                         if e.get("is_context", False)]
+        # Draw edges individually with curves to avoid overlap
+        # Group parallel edges by (u, v) to assign different curvatures
+        from collections import defaultdict
+        parallel_edges = defaultdict(list)
 
-        # Direct edges - solid, darker
-        if direct_edges:
-            nx.draw_networkx_edges(G, pos, edgelist=direct_edges, edge_color='#333',
-                                   arrows=True, arrowsize=20, width=2.5, style='solid')
+        for u, v, key, data in G.edges(keys=True, data=True):
+            parallel_edges[(u, v)].append((key, data))
 
-        # Context edges - dashed, lighter
-        if context_edges:
-            nx.draw_networkx_edges(G, pos, edgelist=context_edges, edge_color='#999',
-                                   arrows=True, arrowsize=15, width=1.5, style='dashed')
+        edge_labels = {}
+        has_direct = False
+        has_context = False
+
+        # Draw each edge with appropriate curve
+        for (u, v), edges in parallel_edges.items():
+            num_edges = len(edges)
+            for idx, (key, data) in enumerate(edges):
+                # Calculate curve radius to separate parallel edges
+                if num_edges > 1:
+                    rad = 0.15 + (idx * 0.1)  # Different curve for each edge
+                else:
+                    rad = 0.0  # Straight line for single edge
+
+                is_context = data.get('is_context', False)
+                label = data.get('label', '')
+
+                if is_context:
+                    has_context = True
+                    nx.draw_networkx_edges(
+                        G, pos, edgelist=[(u, v, key)],
+                        edge_color='#999', arrows=True, arrowsize=15,
+                        width=1.5, style='dashed',
+                        connectionstyle=f'arc3,rad={rad}'
+                    )
+                else:
+                    has_direct = True
+                    nx.draw_networkx_edges(
+                        G, pos, edgelist=[(u, v, key)],
+                        edge_color='#333', arrows=True, arrowsize=20,
+                        width=2.5, style='solid',
+                        connectionstyle=f'arc3,rad={rad}'
+                    )
+
+                # Add label positioned on curve
+                edge_labels[(u, v)] = label if (u, v) not in edge_labels else f"{edge_labels[(u, v)]}\n{label}"
 
         # Edge labels
-        edge_labels = {(e["source"], e["target"]): e.get("label", "")
-                       for e in graph_spec.get("edges", [])}
         nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=8)
 
         # Add legend if we have both types of edges
-        if direct_edges and context_edges:
+        if has_direct and has_context:
             from matplotlib.lines import Line2D
             legend_elements = [
                 Line2D([0], [0], color='#333', linewidth=2.5, label='Direct (from query)'),
