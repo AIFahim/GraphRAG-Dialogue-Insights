@@ -171,102 +171,102 @@ Return ONLY the Cypher query, no explanation."""
             print(f"  Context retrieval error: {e}")
             return {"edges": [], "nodes": 0, "edge_count": 0}
 
-#     def llm_analyze_results(self, user_query: str, results: list, context: dict = None) -> dict:
-#         """LLM analyzes results with context and decides what to visualize + suggestions + natural response"""
-#
-#         results_json = json.dumps(results[:15], indent=2, default=str)
-#
-#         # Add context information if available
-#         context_info = ""
-#         if context and context.get('edges'):
-#             context_json = json.dumps(context['edges'][:20], indent=2, default=str)
-#             context_info = f"""
-#
-# Additional Context (1-hop neighboring edges):
-# {context_json}
-#
-# This context shows related edges that weren't in the main query but are connected to the results.
-# """
-#
-#         prompt = f"""User asked: {user_query}
-#
-# Main query results:
-# {results_json}
-# {context_info}
-#
-# Analyze these results (including context if provided) and return JSON with:
-# 1. "response": Natural language answer (2-3 sentences, explain what you found INCLUDING insights from context)
-# 2. "nodes": list of ALL node IDs/names to show in graph (from main results + useful context)
-# 3. "edges": list of {{"source": "...", "target": "...", "label": "...", "is_context": true/false}}
-#    - is_context=false for main query edges
-#    - is_context=true for context edges
-# 4. "suggestions": 5 natural language follow-up questions (based on available relationships in context)
-#
-# Return JSON only:
-# {{
-#     "response": "I found 2 related issues for MRM-488. Based on context, these bugs also affect the Web Interface component and are assigned to Martin Stockhammer.",
-#     "nodes": ["MRM-488", "MRM-615", "MRM-487", "Web Interface", "Martin Stockhammer"],
-#     "edges": [
-#         {{"source": "MRM-488", "target": "MRM-615", "label": "RELATES_TO", "is_context": false}},
-#         {{"source": "MRM-488", "target": "Web Interface", "label": "AFFECTS", "is_context": true}}
-#     ],
-#     "suggestions": ["Who is assigned to MRM-615?", "What other components are affected?", ...]
-# }}"""
-#
-#         response = self.client.chat_completion(
-#             messages=[{"role": "user", "content": prompt}],
-#             model=MODEL,
-#             max_tokens=1536,
-#             temperature=0.3
-#         )
-#
-#         content = response.choices[0].message.content.strip()
-#
-#         # Parse JSON
-#         if "```json" in content:
-#             content = content.split("```json")[1].split("```")[0].strip()
-#         elif "```" in content:
-#             content = content.split("```")[1].split("```")[0].strip()
-#
-#         try:
-#             return json.loads(content)
-#         except json.JSONDecodeError as e:
-#             print(f"  JSON parse error: {e}")
-#             print("  Extracting basic info from malformed response...")
-#
-#             # Fallback: Extract nodes manually
-#             nodes = []
-#             edges = []
-#
-#             # Extract Issue IDs from results
-#             for record in results[:10]:
-#                 for val in record.values():
-#                     if isinstance(val, str) and val.startswith('MRM-'):
-#                         if val not in nodes:
-#                             nodes.append(val)
-#
-#             # Try to extract edges from context
-#             if context and context.get('edges'):
-#                 for ctx_edge in context['edges'][:10]:
-#                     edges.append({
-#                         "source": ctx_edge.get('source'),
-#                         "target": ctx_edge.get('target'),
-#                         "label": ctx_edge.get('rel'),
-#                         "is_context": True
-#                     })
-#
-#             return {
-#                 "response": f"Found {len(results)} results. (Note: Full analysis unavailable due to formatting issue)",
-#                 "nodes": nodes[:15],
-#                 "edges": edges[:15],
-#                 "suggestions": [
-#                     "Show more details about these issues",
-#                     "Who is assigned to these?",
-#                     "What components are affected?",
-#                     "Show related bugs",
-#                     "Check dependencies"
-#                 ]
-#             }
+    def llm_analyze_results(self, user_query: str, results: list, context: dict = None) -> dict:
+        """LLM analyzes results with context and decides what to visualize + suggestions + natural response"""
+
+        results_json = json.dumps(results[:15], indent=2, default=str)
+
+        # Add context information if available
+        context_info = ""
+        if context and context.get('edges'):
+            context_json = json.dumps(context['edges'][:20], indent=2, default=str)
+            context_info = f"""
+
+Additional Context (1-hop neighboring edges):
+{context_json}
+
+This context shows related edges that weren't in the main query but are connected to the results.
+"""
+
+        prompt = f"""User asked: {user_query}
+
+Main query results:
+{results_json}
+{context_info}
+
+Analyze these results (including context if provided) and return JSON with:
+1. "response": Natural language answer (2-3 sentences, explain what you found INCLUDING insights from context)
+2. "nodes": list of ALL node IDs/names to show in graph (from main results + useful context)
+3. "edges": list of {{"source": "...", "target": "...", "label": "...", "is_context": true/false}}
+   - is_context=false for main query edges
+   - is_context=true for context edges
+4. "suggestions": 5 natural language follow-up questions (based on available relationships in context)
+
+Return JSON only:
+{{
+    "response": "I found 2 related issues for MRM-488. Based on context, these bugs also affect the Web Interface component and are assigned to Martin Stockhammer.",
+    "nodes": ["MRM-488", "MRM-615", "MRM-487", "Web Interface", "Martin Stockhammer"],
+    "edges": [
+        {{"source": "MRM-488", "target": "MRM-615", "label": "RELATES_TO", "is_context": false}},
+        {{"source": "MRM-488", "target": "Web Interface", "label": "AFFECTS", "is_context": true}}
+    ],
+    "suggestions": ["Who is assigned to MRM-615?", "What other components are affected?", ...]
+}}"""
+
+        response = self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            model=MODEL,
+            max_tokens=1536,
+            temperature=0.3
+        )
+
+        content = response.choices[0].message.content.strip()
+
+        # Parse JSON
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"  JSON parse error: {e}")
+            print("  Extracting basic info from malformed response...")
+
+            # Fallback: Extract nodes manually
+            nodes = []
+            edges = []
+
+            # Extract Issue IDs from results
+            for record in results[:10]:
+                for val in record.values():
+                    if isinstance(val, str) and val.startswith('MRM-'):
+                        if val not in nodes:
+                            nodes.append(val)
+
+            # Try to extract edges from context
+            if context and context.get('edges'):
+                for ctx_edge in context['edges'][:10]:
+                    edges.append({
+                        "source": ctx_edge.get('source'),
+                        "target": ctx_edge.get('target'),
+                        "label": ctx_edge.get('rel'),
+                        "is_context": True
+                    })
+
+            return {
+                "response": f"Found {len(results)} results. (Note: Full analysis unavailable due to formatting issue)",
+                "nodes": nodes[:15],
+                "edges": edges[:15],
+                "suggestions": [
+                    "Show more details about these issues",
+                    "Who is assigned to these?",
+                    "What components are affected?",
+                    "Show related bugs",
+                    "Check dependencies"
+                ]
+            }
 
     def draw_graph(self, graph_spec: dict, filename: str) -> str:
         """Simple matplotlib drawing from LLM specification"""
@@ -377,19 +377,19 @@ Return ONLY the Cypher query, no explanation."""
 
         prompt = f"""Generate PlantUML code to visualize this graph.
 
-User question: {user_query}
-
-Nodes: {graph_spec.get('nodes', [])}
-Edges: {graph_spec.get('edges', [])}
-
-Create a clear PlantUML diagram:
-- Use object diagram or component diagram style
-- Color code nodes: #FF6B6B for MRM- issues, #4ECDC4 for others
-- Show all relationships with labels
-- Keep it simple and readable
-
-Return ONLY PlantUML code starting with @startuml and ending with @enduml.
-No explanations."""
+        User question: {user_query}
+        
+        Nodes: {graph_spec.get('nodes', [])}
+        Edges: {graph_spec.get('edges', [])}
+        
+        Create a clear PlantUML diagram:
+        - Use object diagram or component diagram style
+        - Color code nodes: #FF6B6B for MRM- issues, #4ECDC4 for others
+        - Show all relationships with labels
+        - Keep it simple and readable
+        
+        Return ONLY PlantUML code starting with @startuml and ending with @enduml.
+        No explanations."""
 
         response = self.client.chat_completion(
             messages=[{"role": "user", "content": prompt}],
